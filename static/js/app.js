@@ -1,8 +1,10 @@
 var editor;
+var connected = false;
+var bookmarks = {};
 
 function apiCall(method, path, params, cb) {
   $.ajax({
-    url: path, 
+    url: "/api" + path,
     method: method,
     cache: false,
     data: params,
@@ -15,10 +17,12 @@ function apiCall(method, path, params, cb) {
   });
 }
 
-function getTables(cb)                { apiCall("get", "/tables", {}, cb); }
-function getTableStructure(table, cb) { apiCall("get", "/tables/" + table, {}, cb); }
-function getTableIndexes(table, cb)   { apiCall("get", "/tables/" + table + "/indexes", {}, cb); }
-function getHistory(cb)               { apiCall("get", "/history", {}, cb); }
+function getTables(cb)                 { apiCall("get", "/tables", {}, cb); }
+function getTableRows(table, opts, cb) { apiCall("get", "/tables/" + table + "/rows", opts, cb); }
+function getTableStructure(table, cb)  { apiCall("get", "/tables/" + table, {}, cb); }
+function getTableIndexes(table, cb)    { apiCall("get", "/tables/" + table + "/indexes", {}, cb); }
+function getHistory(cb)                { apiCall("get", "/history", {}, cb); }
+function getBookmarks(cb)              { apiCall("get", "/bookmarks", {}, cb); }
 
 function executeQuery(query, cb) {
   apiCall("post", "/query", { query: query }, cb);
@@ -29,9 +33,11 @@ function explainQuery(query, cb) {
 }
 
 function loadTables() {
+  $("#tables li").remove();
+
   getTables(function(data) {
     data.forEach(function(item) {
-      $("<li>" + item + "</li>").appendTo("#tables");
+      $("<li><span><i class='fa fa-table'></i> " + item + "</span></li>").appendTo("#tables");
     });
   });
 }
@@ -44,15 +50,36 @@ function escapeHtml(str) {
   return "<span class='null'>null</span>";
 }
 
+function unescapeHtml(str){
+  var e = document.createElement("div");
+  e.innerHTML = str;
+  return e.childNodes.length === 0 ? "" : e.childNodes[0].nodeValue;
+}
+
+function getCurrentTable() {
+  return $("#tables").attr("data-current") || "";
+}
+
 function resetTable() {
   $("#results").
     attr("data-mode", "").
     text("").
     removeClass("empty").
-    removeClass("history");
+    removeClass("no-crop");
 }
 
-function buildTable(results) {
+function sortArrow(direction) {
+    switch (direction) {
+        case "ASC":
+            return "&#x25B2;";
+        case "DESC":
+            return "&#x25BC;";
+        default:
+            return "";
+    }
+}
+
+function buildTable(results, sortColumn, sortOrder) {
   resetTable();
 
   if (results.error) {
@@ -71,7 +98,11 @@ function buildTable(results) {
   var rows = "";
 
   results.columns.forEach(function(col) {
-    cols += "<th data='" + col + "'>" + col + "</th>";
+      if (col === sortColumn) {
+          cols += "<th data='" + col + "'" + "data-sort-order=" + sortOrder + ">" + col + "&nbsp;" + sortArrow(sortOrder) + "</th>";
+      } else {
+          cols += "<th data='" + col + "'>" + col + "</th>";
+      }
   });
 
   results.rows.forEach(function(row) {
@@ -93,20 +124,20 @@ function showQueryHistory() {
     var rows = [];
 
     for(i in data) {
-      rows.unshift([parseInt(i) + 1, data[i]]);
+      rows.unshift([parseInt(i) + 1, data[i].query, data[i].timestamp]);
     }
 
-    buildTable({ columns: ["id", "query"], rows: rows });
-  
-    setCurrentTab("table_history");  
+    buildTable({ columns: ["id", "query", "timestamp"], rows: rows });
+
+    setCurrentTab("table_history");
     $("#input").hide();
     $("#output").addClass("full");
-    $("#results").addClass("history");
+    $("#results").addClass("no-crop");
   });
 }
 
 function showTableIndexes() {
-  var name = $("#tables li.selected").text();
+  var name = getCurrentTable();
 
   if (name.length == 0) {
     alert("Please select a table!");
@@ -119,11 +150,12 @@ function showTableIndexes() {
 
     $("#input").hide();
     $("#output").addClass("full");
+    $("#results").addClass("no-crop");
   });
 }
 
 function showTableInfo() {
-  var name = $("#tables li.selected").text();
+  var name = getCurrentTable();
 
   if (name.length == 0) {
     alert("Please select a table!");
@@ -140,18 +172,16 @@ function showTableInfo() {
   });
 }
 
-function showTableContent() {
-  var name = $("#tables li.selected").text();
+function showTableContent(sortColumn, sortOrder) {
+  var name = getCurrentTable();
 
   if (name.length == 0) {
     alert("Please select a table!");
     return;
   }
 
-  var query = "SELECT * FROM \"" + name + "\" LIMIT 100;";
-
-  executeQuery(query, function(data) {
-    buildTable(data);
+  getTableRows(name, { limit: 100, sort_column: sortColumn, sort_order: sortOrder }, function(data) {
+    buildTable(data, sortColumn, sortOrder);
     setCurrentTab("table_content");
 
     $("#results").attr("data-mode", "browse");
@@ -161,7 +191,7 @@ function showTableContent() {
 }
 
 function showTableStructure() {
-  var name = $("#tables li.selected").text();
+  var name = getCurrentTable();
 
   if (name.length == 0) {
     alert("Please select a table!");
@@ -171,6 +201,10 @@ function showTableStructure() {
   getTableStructure(name, function(data) {
     setCurrentTab("table_structure");
     buildTable(data);
+
+    $("#input").hide();
+    $("#output").addClass("full");
+    $("#results").addClass("no-crop");
   });
 }
 
@@ -180,6 +214,36 @@ function showQueryPanel() {
 
   $("#input").show();
   $("#output").removeClass("full");
+}
+
+function showConnectionPanel() {
+  setCurrentTab("table_connection");
+
+  apiCall("get", "/connection", {}, function(data) {
+    var rows = [];
+
+    for(key in data) {
+      rows.push([key, data[key]]);
+    }
+
+    buildTable({
+      columns: ["attribute", "value"],
+      rows: rows
+    });
+
+    $("#input").hide();
+    $("#output").addClass("full");
+  });
+}
+
+function showActivityPanel() {
+  setCurrentTab("table_activity");
+
+  apiCall("get", "/activity", {}, function(data) {
+    buildTable(data);
+    $("#input").hide();
+    $("#output").addClass("full");
+  });
 }
 
 function runQuery() {
@@ -203,6 +267,17 @@ function runQuery() {
     $("#query_progress").hide();
     $("#input").show();
     $("#output").removeClass("full");
+
+    if (query.toLowerCase().indexOf("explain") != -1) {
+      $("#results").addClass("no-crop");
+    }
+
+    var re = /(create|drop) table/i;
+
+    // Refresh tables list if table was added or removed
+    if (query.match(re)) {
+      loadTables();
+    }
   });
 }
 
@@ -227,6 +302,7 @@ function runExplain() {
     $("#query_progress").hide();
     $("#input").show();
     $("#output").removeClass("full");
+    $("#results").addClass("no-crop");
   });
 }
 
@@ -240,7 +316,7 @@ function exportToCSV() {
   // Replace line breaks with spaces and properly encode query
   query = window.encodeURI(query.replace(/\n/g, " "));
 
-  var url = "http://" + window.location.host + "/query?format=csv&query=" + query;
+  var url = "http://" + window.location.host + "/api/query?format=csv&query=" + query;
   var win = window.open(url, '_blank');
 
   setCurrentTab("table_query");
@@ -285,15 +361,75 @@ function addShortcutTooltips() {
   }
 }
 
-$(document).ready(function() {
-  initEditor();
-  addShortcutTooltips();
+function showConnectionSettings() {
+  getBookmarks(function(data) {
+    // Do not add any bookmarks if we've got an error
+    if (data.error) {
+      return;
+    }
 
-  $("#table_content").on("click",   function() { showTableContent();   });
-  $("#table_structure").on("click", function() { showTableStructure(); });
-  $("#table_indexes").on("click",   function() { showTableIndexes();   });
-  $("#table_history").on("click",   function() { showQueryHistory();   });
-  $("#table_query").on("click",     function() { showQueryPanel();     });
+    if (Object.keys(data).length > 0) {
+      // Set bookmarks in global var
+      bookmarks = data;
+
+      // Remove all existing bookmark options
+      $("#connection_bookmarks").html("");
+
+      // Add blank option
+      $("<option value=''></option>").appendTo("#connection_bookmarks");
+
+      // Add all available bookmarks
+      for (key in data) {
+        $("<option value='" + key + "''>" + key + "</option>").appendTo("#connection_bookmarks");
+      }
+
+      $(".bookmarks").show();
+    }
+    else {
+      $(".bookmarks").hide();
+    }
+  });
+
+  $("#connection_window").show();
+}
+
+function getConnectionString() {
+  var url  = $.trim($("#connection_url").val());
+  var mode = $(".connection-group-switch button.active").attr("data");
+  var ssl  = $("#connection_ssl").val();
+
+  if (mode == "standard") {
+    var host = $("#pg_host").val();
+    var port = $("#pg_port").val();
+    var user = $("#pg_user").val();
+    var pass = $("#pg_password").val();
+    var db   = $("#pg_db").val();
+
+    if (port.length == 0) {
+      port = "5432";
+    }
+
+    url = "postgres://" + user + ":" + pass + "@" + host + ":" + port + "/" + db + "?sslmode=" + ssl;
+  }
+  else {
+    var local = url.indexOf("localhost") != -1 || url.indexOf("127.0.0.1") != -1;
+
+    if (local && url.indexOf("sslmode") == -1) {
+      url += "?sslmode=" + ssl;
+    }
+  }
+
+  return url;
+}
+
+$(document).ready(function() {
+  $("#table_content").on("click",    function() { showTableContent();    });
+  $("#table_structure").on("click",  function() { showTableStructure();  });
+  $("#table_indexes").on("click",    function() { showTableIndexes();    });
+  $("#table_history").on("click",    function() { showQueryHistory();    });
+  $("#table_query").on("click",      function() { showQueryPanel();      });
+  $("#table_connection").on("click", function() { showConnectionPanel(); });
+  $("#table_activity").on("click",   function() { showActivityPanel();   });
 
   $("#run").on("click", function() {
     runQuery();
@@ -312,12 +448,174 @@ $(document).ready(function() {
     $(this).addClass("selected");
   });
 
+  $("#results").on("click", "th", function(e) {
+      var sortColumn = this.attributes['data'].value;
+      var contentTab = $('#table_content').hasClass('selected');
+
+      if (!contentTab) {
+          return;
+      }
+
+      if (this.dataset.sortOrder === "ASC") {
+          this.dataset.sortOrder = "DESC"
+      } else {
+          this.dataset.sortOrder = "ASC"
+      }
+
+      showTableContent(sortColumn, this.dataset.sortOrder);
+  });
+
+  $("#results").on("dblclick", "td > div", function() {
+    if ($(this).has("textarea").length > 0) {
+      return;
+    }
+
+    var value = unescapeHtml($(this).html());
+    if (!value) { return; }
+
+    var textarea = $("<textarea />").
+      text(value).
+      addClass("form-control").
+      css("width", $(this).css("width"));
+
+    if (value.split("\n").length >= 3) {
+      textarea.css("height", "200px");
+    }
+
+    $(this).html(textarea).css("max-height", "200px");
+  });
+
   $("#tables").on("click", "li", function() {
     $("#tables li.selected").removeClass("selected");
     $(this).addClass("selected");
+    $("#tables").attr("data-current", $.trim($(this).text()));
+
     showTableContent();
     showTableInfo();
   });
 
-  loadTables();
+  $("#refresh_tables").on("click", function() {
+    loadTables();
+  });
+
+  $("#edit_connection").on("click", function() {
+    if (connected) {
+      $("#close_connection_window").show();
+    }
+
+    showConnectionSettings();
+  });
+
+  $("#close_connection_window").on("click", function() {
+    $("#connection_window").hide();
+  });
+
+  $("#connection_url").on("change", function() {
+    if ($(this).val().indexOf("localhost") != -1) {
+      $("#connection_ssl").val("disable");
+    }
+  });
+
+  $("#pg_host").on("change", function() {
+    var value = $(this).val();
+
+    if (value.indexOf("localhost") != -1 || value.indexOf("127.0.0.1") != -1) {
+      $("#connection_ssl").val("disable");
+    }
+  });
+
+  $(".connection-group-switch button").on("click", function() {
+    $(".connection-group-switch button").removeClass("active");
+    $(this).addClass("active");
+
+    switch($(this).attr("data")) {
+      case "scheme":
+        $(".connection-scheme-group").show();
+        $(".connection-standard-group").hide();
+        return;
+      case "standard":
+        $(".connection-scheme-group").hide();
+        $(".connection-standard-group").show();
+        $(".connection-ssh-group").hide();
+        return;
+      case "ssh":
+        $(".connection-scheme-group").hide();
+        $(".connection-standard-group").show();
+        $(".connection-ssh-group").show();
+        return;
+    }
+  });
+
+  $("#connection_bookmarks").on("change", function(e) {
+    var name = $.trim($(this).val());
+
+    if (name == "") {
+      return;
+    }
+
+    item = bookmarks[name];
+
+    // Check if bookmark only has url set
+    if (item.url != "") {
+      $("#connection_url").val(item.url);
+      $("#connection_scheme").click();
+      return;
+    }
+
+    // Fill in bookmarked connection settings
+    $("#pg_host").val(item.host);
+    $("#pg_port").val(item.port);
+    $("#pg_user").val(item.user);
+    $("#pg_password").val(item.password);
+    $("#pg_db").val(item.database);
+    $("#connection_ssl").val(item.ssl);
+  });
+
+  $("#connection_form").on("submit", function(e) {
+    e.preventDefault();
+
+    var button = $(this).children("button");
+    var url = getConnectionString();
+
+    if (url.length == 0) {
+      return;
+    }
+
+    $("#connection_error").hide();
+    button.prop("disabled", true).text("Please wait...");
+
+    apiCall("post", "/connect", { url: url }, function(resp) {
+      button.prop("disabled", false).text("Connect");
+
+      if (resp.error) {
+        connected = false;
+        $("#connection_error").text(resp.error).show();
+      }
+      else {
+        connected = true;
+        loadTables();
+
+        $("#connection_window").hide();
+        $("#current_database").text(resp.current_database);
+        $("#main").show();
+      }
+    });
+  });
+
+  initEditor();
+  addShortcutTooltips();
+
+  apiCall("get", "/connection", {}, function(resp) {
+    if (resp.error) {
+      connected = false;
+      showConnectionSettings();
+    }
+    else {
+      connected = true;
+      loadTables();
+
+      $("#current_database").text(resp.current_database);
+      $("#main").show();
+    }
+  });
 });

@@ -1,3 +1,7 @@
+#main {
+  display: none;
+}
+
 #nav {
   position: fixed;
   top: 0;
@@ -69,43 +73,80 @@
   left: 0px;
   top: 0px;
   bottom: 0px;
-  background: #31373d;
-  font-size: 13px;
 }
 
-#sidebar .wrapper {
-  height: 100%;
-}
-
-#sidebar .wrapper div.title {
+#sidebar .title {
+  position: absolute;
+  top: 0;
+  width: 100%;
   line-height: 33px;
   height: 33px;
   padding: 0px 8px;
   padding-left: 12px;
   color: #fff;
+  background: #31373d;
 }
 
 #sidebar div.tables-list {
   position: absolute;
-  width: 250px;
+  right: 0;
   top: 0px;
   left: 0px;
   bottom: 130px;
   overflow: auto;
+  background: #31373d;
 }
 
-#sidebar div.table-information {
-  border-top: 1px solid #272c30;
-  background: #272c30;
-  position: absolute;
-  width: 250px;
-  left: 0px;
-  bottom: 0px;
-  height: 130px;
+#sidebar div.tables-list .wrap {
+  height: 100%;
   overflow: auto;
 }
 
+#sidebar div.tables-list .title span.current-database {
+  margin-left: 4px;
+}
+
+#sidebar div.tables-list .title:hover span.refresh {
+  display: inline-block;
+}
+
+#sidebar div.tables-list .title span.refresh {
+  float: right;
+  margin-right: 4px;
+  cursor: pointer;
+  color: #95a7b7;
+  display: none;
+}
+
+#sidebar div.tables-list .title span.refresh:hover {
+  color: #fff;
+}
+
+#sidebar div.tables-list #tables {
+  padding: 33px 0 0;
+  font-size: 13px;
+}
+
+#sidebar div.table-information {
+  position: fixed;
+  width: 250px;
+  left: 0px;
+  height: 130px;
+  bottom: 0px;
+  background: #272c30;
+}
+
+#sidebar div.table-information .wrap {
+  height: 100%;
+  overflow-y: auto;
+}
+
+#sidebar div.table-information .title {
+  background: #272c30;
+}
+
 #sidebar div.table-information ul {
+  padding: 33px 0 0;
   font-size: 12px;
   display: none;
 }
@@ -113,12 +154,15 @@
 #sidebar div.table-information ul li {
   line-height: 24px;
   height: 24px;
+  padding: 0 8px 0 12px;
   cursor: default;
   color: #637D94 !important;
 }
 
 #sidebar div.table-information ul li span {
   color: #95a7b7;
+  min-width: 0;
+  padding-left: 0px;
 }
 
 #sidebar ul {
@@ -130,8 +174,8 @@
   list-style: none;
   list-style-type: none;
   line-height: 30px;
-  padding: 0px 8px;
-  padding-left: 12px;
+  padding: 0px;
+  margin: 0px;
   cursor: pointer;
   color: #95a7b7 !important;
   white-space: nowrap;
@@ -144,8 +188,19 @@
   -webkit-font-smoothing: antialiased;
 }
 
-#sidebar ul li:hover {
+#sidebar ul li:hover span {
   background: #272c30;
+}
+
+#sidebar ul li i {
+  margin-right: 4px;
+}
+
+#sidebar ul li span {
+  padding: 0px 8px 0 12px;
+  display: inline-block;
+  width: auto;
+  min-width: 100%;
 }
 
 #body {
@@ -254,8 +309,6 @@
   border-bottom: 1px solid #eae9e9;
   padding: 3px 9px;
   line-height: 24px;
-  text-transform: uppercase;
-  font-size: 10px;
   color: #6a6a6a;
   font-weight: bold;
   -webkit-font-smoothing: antialiased;
@@ -295,15 +348,87 @@
   text-transform: uppercase;
 }
 
+#results td textarea {
+  color: #000 !important;
+  font-size: 12px;
+}
+
 #results th:first-child,
 #results td:first-child {
   padding-left: 15px;
 }
 
-#results.history td div {
+#results.no-crop td div {
   max-width: none;
-} 
+}
 
 #custom_query {
   height: 205px;
+}
+
+#connection_window {
+  z-index: 3;
+  position: fixed;
+  background: #ebeef0;
+  top: 0px;
+  left: 0px;
+  bottom: 0px;
+  right: 0px;
+  display: none;
+}
+
+#edit_connection {
+  position: fixed;
+  right: 8px;
+  top: 10px;
+}
+
+#edit_connection i {
+  margin-right: 4px;
+}
+
+#close_connection_window {
+  display: none;
+}
+
+#connection_error {
+  display: none;
+}
+
+.bookmarks {
+  display: none;
+}
+
+.connection-settings {
+  width: 600px;
+  margin: 0px auto;
+  margin-top: 50px;
+}
+
+.connection-settings h1 {
+  text-align: center;
+  text-shadow: 0px 1px 0px #fff;
+  margin-bottom: 25px;
+  color: #95A7B7;
+  font-weight: normal;
+}
+
+.connection-settings form {
+  background: #fff;
+  padding: 25px;
+  border-radius: 4px;
+  -moz-border-radius: 4px;
+  -webkit-border-radius: 4px;
+}
+
+.connection-settings form p.help-block {
+  font-size: 12px;
+}
+
+.connection-scheme-group {
+  display: none;
+}
+
+.connection-ssh-group {
+  display: none;
 }

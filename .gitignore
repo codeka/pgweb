@@ -1,4 +1,5 @@
 .DS_Store
 pgweb
 bin
-bindata.go
+tmp/
+cover.out

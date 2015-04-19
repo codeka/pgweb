@@ -2,27 +2,27 @@ package main
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/jessevdk/go-flags"
-	_ "github.com/lib/pq"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jessevdk/go-flags"
+	_ "github.com/lib/pq"
 )
 
-const VERSION = "0.3.1"
+const VERSION = "0.5.2"
 
-var options struct {
+type Options struct {
 	Version  bool   `short:"v" long:"version" description:"Print version"`
 	Debug    bool   `short:"d" long:"debug" description:"Enable debugging mode" default:"false"`
 	Url      string `long:"url" description:"Database connection string"`
-	Host     string `long:"host" description:"Server hostname or IP" default:"localhost"`
+	Host     string `long:"host" description:"Server hostname or IP"`
 	Port     int    `long:"port" description:"Server port" default:"5432"`
-	User     string `long:"user" description:"Database user" default:"postgres"`
+	User     string `long:"user" description:"Database user"`
 	Pass     string `long:"pass" description:"Password for user"`
-	DbName   string `long:"db" description:"Database name" default:"postgres"`
-	Ssl      string `long:"ssl" description:"SSL option" default:"disable"`
+	DbName   string `long:"db" description:"Database name"`
+	Ssl      string `long:"ssl" description:"SSL option"`
 	HttpHost string `long:"bind" description:"HTTP server host" default:"localhost"`
 	HttpPort uint   `long:"listen" description:"HTTP server listen port" default:"8080"`
 	AuthUser string `long:"auth-user" description:"HTTP basic auth user"`
@@ -31,41 +31,25 @@ var options struct {
 }
 
 var dbClient *Client
+var options Options
 
 func exitWithMessage(message string) {
 	fmt.Println("Error:", message)
 	os.Exit(1)
 }
 
-func getConnectionString() string {
-	if options.Url != "" {
-		url := options.Url
-
-		if options.Ssl != "" && !strings.Contains(url, "sslmode") {
-			url += fmt.Sprintf("?sslmode=%s", options.Ssl)
-		}
-
-		return url
-	}
-
-	str := fmt.Sprintf(
-		"host=%s port=%d user=%s dbname=%s sslmode=%s",
-		options.Host, options.Port,
-		options.User, options.DbName,
-		options.Ssl,
-	)
-
-	if options.Pass != "" {
-		str += fmt.Sprintf(" password=%s", options.Pass)
-	}
-
-	return str
-}
-
 func initClient() {
+	if connectionSettingsBlank(options) {
+		return
+	}
+
 	client, err := NewClient()
 	if err != nil {
 		exitWithMessage(err.Error())
+	}
+
+	if options.Debug {
+		fmt.Println("Server connection string:", client.connectionString)
 	}
 
 	fmt.Println("Connecting to server...")
@@ -75,13 +59,9 @@ func initClient() {
 	}
 
 	fmt.Println("Checking tables...")
-	tables, err := client.Tables()
+	_, err = client.Tables()
 	if err != nil {
 		exitWithMessage(err.Error())
-	}
-
-	if len(tables) == 0 {
-		exitWithMessage("Database does not have any tables")
 	}
 
 	dbClient = client
@@ -113,22 +93,16 @@ func startServer() {
 		router.Use(gin.BasicAuth(auth))
 	}
 
-	router.GET("/", API_Home)
-	router.GET("/databases", API_GetDatabases)
-	router.GET("/info", API_Info)
-	router.GET("/tables", API_GetTables)
-	router.GET("/tables/:table", API_GetTable)
-	router.GET("/tables/:table/info", API_GetTableInfo)
-	router.GET("/tables/:table/indexes", API_TableIndexes)
-	router.GET("/query", API_RunQuery)
-	router.POST("/query", API_RunQuery)
-	router.GET("/explain", API_ExplainQuery)
-	router.POST("/explain", API_ExplainQuery)
-	router.GET("/history", API_History)
-	router.GET("/static/:type/:name", API_ServeAsset)
+	setupRoutes(router)
 
 	fmt.Println("Starting server...")
-	go router.Run(fmt.Sprintf("%v:%v", options.HttpHost, options.HttpPort))
+	go func() {
+		err := router.Run(fmt.Sprintf("%v:%v", options.HttpHost, options.HttpPort))
+		if err != nil {
+			fmt.Println("Cant start server:", err)
+			os.Exit(1)
+		}
+	}()
 }
 
 func handleSignals() {
@@ -155,12 +129,20 @@ func openPage() {
 
 func main() {
 	initOptions()
+
+	fmt.Println("Pgweb version", VERSION)
 	initClient()
 
-	defer dbClient.db.Close()
+	if dbClient != nil {
+		defer dbClient.db.Close()
+	}
 
 	if !options.Debug {
 		gin.SetMode("release")
+	}
+
+	if options.Debug {
+		startRuntimeProfiler()
 	}
 
 	startServer()
